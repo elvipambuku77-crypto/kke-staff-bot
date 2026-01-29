@@ -8,20 +8,20 @@ const client = new Client({
   ],
 });
 
-// ✅ Put your token in Railway variables as TOKEN
+// Bot token from Railway variable
 const TOKEN = process.env.TOKEN;
 
-// ✅ Your channel ID
+// Channel to send staff list
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// ✅ List all your staff role IDs
+// All staff role IDs
 const STAFF_ROLES = [
-  "1466495902452547832", // Staff
+  "1466124274334040325", // Staff
   "1466124328713195583", // Helper
-  "1466124409763926041", // Moderator
+  "1466124409763926041", // Mod
   "1466124454399705255", // Admin
   "1466124732490584074", // Manager
-  "1466124767659561073", // Head of Staff
+  "1466124767659561073", // Head of staff
   "1466124822424719391", // Co Owner
   "1466124847011598428", // Owner
 ];
@@ -36,12 +36,12 @@ client.once("ready", async () => {
   if (!channel) return console.log("Channel not found");
 
   try {
-    // 🔥 Fetch all members directly from Discord
-    const members = await guild.members.fetch({ force: true });
+    // Fetch all members (force ensures none are skipped)
+    await guild.members.fetch({ force: true });
 
-    // Filter all members that have at least one staff role
-    const staffMembers = members.filter(member =>
-      member.roles.cache.some(r => STAFF_ROLES.includes(r.id))
+    // Filter members who have any staff role
+    const staffMembers = guild.members.cache.filter(member =>
+      member.roles.cache.some(role => STAFF_ROLES.includes(role.id))
     );
 
     if (staffMembers.size === 0) {
@@ -50,7 +50,7 @@ client.once("ready", async () => {
       return;
     }
 
-    // Create an embed for a clean look
+    // Build a clean embed
     const embed = new EmbedBuilder()
       .setTitle("Staff Team")
       .setColor("Blue")
