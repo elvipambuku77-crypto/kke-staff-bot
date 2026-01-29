@@ -10,7 +10,7 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
-const STAFF_ROLE_ID = "1466124274334040325";
+const STAFF_ROLE_ID = "1466495902452547832";
 
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
