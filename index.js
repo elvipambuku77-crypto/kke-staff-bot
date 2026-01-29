@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const client = new Client({
   intents: [
@@ -6,16 +6,15 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
   ],
-  partials: [Partials.GuildMember],
 });
 
-// ✅ Put your new bot token in Railway variables as TOKEN
+// ✅ Put your token in Railway variables as TOKEN
 const TOKEN = process.env.TOKEN;
 
-// ✅ Your channel & role IDs
+// ✅ Your channel ID
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// If you want multiple staff roles, list them here
+// ✅ List all your staff role IDs
 const STAFF_ROLES = [
   "1466495902452547832", // Staff
   "1466124328713195583", // Helper
@@ -37,20 +36,21 @@ client.once("ready", async () => {
   if (!channel) return console.log("Channel not found");
 
   try {
-    // 🔥 Fetch all members
-    await guild.members.fetch({ force: true });
+    // 🔥 Fetch all members directly from Discord
+    const members = await guild.members.fetch({ force: true });
 
-    // Filter all staff members
-    const staffMembers = guild.members.cache.filter(member =>
+    // Filter all members that have at least one staff role
+    const staffMembers = members.filter(member =>
       member.roles.cache.some(r => STAFF_ROLES.includes(r.id))
     );
 
     if (staffMembers.size === 0) {
-      channel.send("No staff members found!");
-      return console.log("No staff members found with these roles");
+      console.log("No staff members found!");
+      await channel.send("No staff members found!");
+      return;
     }
 
-    // Create an embed message for clean look
+    // Create an embed for a clean look
     const embed = new EmbedBuilder()
       .setTitle("Staff Team")
       .setColor("Blue")
@@ -68,7 +68,7 @@ client.once("ready", async () => {
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
-    console.log("Staff list sent successfully");
+    console.log("Staff list sent successfully!");
   } catch (err) {
     console.error("Error fetching members:", err);
   }
