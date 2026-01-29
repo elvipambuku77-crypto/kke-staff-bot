@@ -7,13 +7,13 @@ const client = new Client({
   ]
 });
 
-const TOKEN = "MTQ2NDY0NTM3ODk2Mjg4NjY2Nw.G-btL5.E1RO9tduUP6m2bBWJn6AmR3x0r94jdyNMGxNUk";
+const TOKEN = process.env.TOKEN;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
-const STAFF_ROLE_ID = "1466481220551704587";
+const STAFF_ROLE_ID = "1466124274334040325";
 
-client.once("ready", async () => {
-  console.log("Bot is online");
+client.on("ready", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
 
   const guild = client.guilds.cache.first();
   if (!guild) return;
@@ -30,12 +30,7 @@ client.once("ready", async () => {
   let message = "**Staff Team**\n\n";
 
   staffMembers.forEach(member => {
-    const roles = member.roles.cache
-      .filter(r => r.id !== guild.id)
-      .map(r => r.name)
-      .join(", ");
-
-    message += `${member.user.tag} → ${roles}\n`;
+    message += `${member.user.tag}\n`;
   });
 
   channel.send(message);
