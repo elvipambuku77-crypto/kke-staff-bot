@@ -21,11 +21,13 @@ client.on("ready", async () => {
   const channel = guild.channels.cache.get(STAFF_CHANNEL_ID);
   if (!channel) return;
 
-  await guild.members.fetch();
+  // Fetch ALL members to make sure nothing is missing
+await guild.members.fetch({ force: true });
 
-  const staffMembers = guild.members.cache.filter(m =>
-    m.roles.cache.has(STAFF_ROLE_ID)
-  );
+const staffMembers = guild.members.cache.filter(member =>
+  member.roles.cache.has(STAFF_ROLE_ID)
+);
+  
 
   let message = "**Staff Team**\n\n";
 
