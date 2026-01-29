@@ -1,125 +1,149 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType } = require("discord.js");
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID; // Your bot’s application ID
+const CLIENT_ID = process.env.CLIENT_ID; // Your bot application ID
 const GUILD_ID = process.env.GUILD_ID; // Your server ID
 
-// Giveaway storage
+// Store giveaways
 let giveaways = [];
 
-// Define slash commands
+// Parse durations like "10s", "5m", "2h"
+function parseDuration(input) {
+  const match = input.match(/^(\d+)(s|m|h)$/);
+  if (!match) return null;
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  if (unit === "s") return value * 1000;
+  if (unit === "m") return value * 60 * 1000;
+  if (unit === "h") return value * 60 * 60 * 1000;
+  return null;
+}
+
+// Register slash commands
 const commands = [
   new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show giveaway commands'),
-
-  new SlashCommandBuilder()
-    .setName('start')
-    .setDescription('Start a giveaway')
-    .addIntegerOption(option => option.setName('duration').setDescription('Duration in seconds').setRequired(true))
-    .addStringOption(option => option.setName('prize').setDescription('Prize name').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('join')
-    .setDescription('Join a giveaway')
-    .addIntegerOption(option => option.setName('id').setDescription('Giveaway ID').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('list')
-    .setDescription('Show active giveaways'),
-
-  new SlashCommandBuilder()
-    .setName('end')
-    .setDescription('End a giveaway')
-    .addIntegerOption(option => option.setName('id').setDescription('Giveaway ID').setRequired(true))
+    .setName("start")
+    .setDescription("Start a giveaway")
+    .addStringOption(opt => opt.setName("duration").setDescription("10s, 5m, 2h").setRequired(true))
+    .addStringOption(opt => opt.setName("prize").setDescription("Prize name").setRequired(true)),
+  new SlashCommandBuilder().setName("help").setDescription("Show giveaway commands"),
+  new SlashCommandBuilder().setName("list").setDescription("Show active giveaways")
 ].map(cmd => cmd.toJSON());
 
-// Register commands
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
   try {
-    console.log('Started refreshing slash commands...');
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Slash commands registered!');
-  } catch (error) {
-    console.error(error);
-  }
+    console.log("Refreshing slash commands...");
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log("Slash commands registered!");
+  } catch (err) { console.error(err); }
 })();
 
-client.on('ready', () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('interactionCreate', async interaction => {
+// Handle slash commands
+client.on("interactionCreate", async interaction => {
   if (!interaction.isCommand()) return;
 
-  const { commandName, options, user } = interaction;
+  const { commandName, options, channel, user } = interaction;
 
-  if (commandName === 'help') {
+  // HELP COMMAND
+  if (commandName === "help") {
     await interaction.reply({
-      content: `🎉 **Giveaway Commands**\n
-/start <duration> <prize> → Start a giveaway
-/join <id> → Join a giveaway
-/list → Show active giveaways
-/end <id> → End a giveaway`,
+      content: `🎉 **Giveaway Commands**\n/start <duration> <prize> → Start a giveaway\n/list → Show active giveaways\nDuration: 10s, 5m, 2h`,
       ephemeral: true
     });
   }
 
-  if (commandName === 'start') {
-    const duration = options.getInteger('duration');
-    const prize = options.getString('prize');
+  // LIST COMMAND
+  if (commandName === "list") {
+    if (giveaways.length === 0) return interaction.reply({ content: "No active giveaways.", ephemeral: true });
+    const list = giveaways.map(g => `ID: ${g.id} → Prize: **${g.prize}**`).join("\n");
+    return interaction.reply({ content: `🎉 **Active Giveaways:**\n${list}`, ephemeral: true });
+  }
 
+  // START COMMAND
+  if (commandName === "start") {
+    const durationInput = options.getString("duration");
+    const prize = options.getString("prize");
+
+    const durationMs = parseDuration(durationInput);
+    if (!durationMs) return interaction.reply({ content: "Invalid duration! Use 10s, 5m, 2h", ephemeral: true });
+
+    const giveawayId = giveaways.length + 1;
     const giveaway = {
-      id: giveaways.length + 1,
+      id: giveawayId,
       prize,
-      endsAt: Date.now() + duration * 1000,
+      endsAt: Date.now() + durationMs,
       participants: [],
+      messageId: null,
+      channelId: channel.id
     };
     giveaways.push(giveaway);
 
-    await interaction.reply(`🎉 Giveaway started! Prize: **${prize}** (ID: ${giveaway.id})`);
+    // Embed for giveaway
+    const embed = new EmbedBuilder()
+      .setTitle(`🎉 Giveaway #${giveawayId}`)
+      .setDescription(`Prize: **${prize}**\nDuration: **${durationInput}**\nClick **JOIN** to enter!`)
+      .setColor("Random")
+      .setTimestamp();
+
+    // Join button
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`join_${giveawayId}`)
+        .setLabel("🎁 JOIN")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const msg = await channel.send({ embeds: [embed], components: [row] });
+    giveaway.messageId = msg.id;
+
+    await interaction.reply({ content: `✅ Giveaway started! Prize: **${prize}**`, ephemeral: true });
+
+    // Auto-end giveaway
+    setTimeout(async () => {
+      const g = giveaways.find(g => g.id === giveawayId);
+      if (!g) return;
+
+      const winner = g.participants.length
+        ? g.participants[Math.floor(Math.random() * g.participants.length)]
+        : "No participants";
+
+      const endEmbed = EmbedBuilder.from(embed)
+        .setTitle(`🏆 Giveaway Ended!`)
+        .setDescription(`Prize: **${g.prize}**\nWinner: **${winner}**`)
+        .setColor("Gold");
+
+      const message = await channel.messages.fetch(g.messageId);
+      await message.edit({ embeds: [endEmbed], components: [] });
+
+      giveaways = giveaways.filter(gw => gw.id !== giveawayId);
+    }, durationMs);
+  }
+});
+
+// Handle join button
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
+
+  const [action, id] = interaction.customId.split("_");
+  if (action !== "join") return;
+
+  const giveaway = giveaways.find(g => g.id === parseInt(id));
+  if (!giveaway) return interaction.reply({ content: "Giveaway not found.", ephemeral: true });
+
+  if (giveaway.participants.includes(interaction.user.tag)) {
+    return interaction.reply({ content: "You already joined!", ephemeral: true });
   }
 
-  if (commandName === 'join') {
-    const id = options.getInteger('id');
-    const giveaway = giveaways.find(g => g.id === id);
-    if (!giveaway) return interaction.reply({ content: "Giveaway not found.", ephemeral: true });
-
-    if (giveaway.participants.includes(user.tag))
-      return interaction.reply({ content: "You already joined!", ephemeral: true });
-
-    giveaway.participants.push(user.tag);
-    await interaction.reply({ content: `${user.tag} joined the giveaway!` });
-  }
-
-  if (commandName === 'list') {
-    if (giveaways.length === 0) return interaction.reply({ content: "No active giveaways.", ephemeral: true });
-
-    const list = giveaways.map(g => `ID: ${g.id} → Prize: ${g.prize}`).join("\n");
-    await interaction.reply({ content: `🎉 **Active Giveaways:**\n${list}`, ephemeral: true });
-  }
-
-  if (commandName === 'end') {
-    const id = options.getInteger('id');
-    const giveaway = giveaways.find(g => g.id === id);
-    if (!giveaway) return interaction.reply({ content: "Giveaway not found.", ephemeral: true });
-
-    const winner = giveaway.participants.length
-      ? giveaway.participants[Math.floor(Math.random() * giveaway.participants.length)]
-      : "No participants";
-
-    await interaction.reply(`🏆 Giveaway ended! Prize: **${giveaway.prize}** → Winner: ${winner}`);
-    giveaways = giveaways.filter(g => g.id !== id);
-  }
+  giveaway.participants.push(interaction.user.tag);
+  await interaction.reply({ content: `🎉 ${interaction.user.tag} joined the giveaway!`, ephemeral: true });
 });
 
 client.login(TOKEN);
