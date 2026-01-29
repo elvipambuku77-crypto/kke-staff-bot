@@ -1,76 +1,86 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
 });
 
-// Bot token from Railway variable
-const TOKEN = process.env.TOKEN;
+const TOKEN = process.env.TOKEN; // Your bot token from Railway
+const PREFIX = "/"; // Command prefix
 
-// Channel to send staff list
-const STAFF_CHANNEL_ID = "1427692088614719628";
+// Store giveaways in memory for this example
+let giveaways = [];
 
-// All staff role IDs
-const STAFF_ROLES = [
-  "1466124274334040325", // Staff
-  "1466124328713195583", // Helper
-  "1466124409763926041", // Mod
-  "1466124454399705255", // Admin
-  "1466124732490584074", // Manager
-  "1466124767659561073", // Head of staff
-  "1466124822424719391", // Co Owner
-  "1466124847011598428", // Owner
-];
-
-client.once("ready", async () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
+});
 
-  const guild = client.guilds.cache.first();
-  if (!guild) return console.log("No guild found");
+// Listen for messages
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return; // Ignore bots
+  if (!message.content.startsWith(PREFIX)) return;
 
-  const channel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!channel) return console.log("Channel not found");
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
 
-  try {
-    // Fetch all members (force ensures none are skipped)
-    await guild.members.fetch({ force: true });
-
-    // Filter members who have any staff role
-    const staffMembers = guild.members.cache.filter(member =>
-      member.roles.cache.some(role => STAFF_ROLES.includes(role.id))
+  // Show prefix usage
+  if (command === "help") {
+    return message.channel.send(
+      `🎉 **Giveaway Commands**\n` +
+      `\`${PREFIX}start <duration> <prize>\` → Start a giveaway\n` +
+      `\`${PREFIX}list\` → Show active giveaways\n` +
+      `\`${PREFIX}end <id>\` → End a giveaway`
     );
+  }
 
-    if (staffMembers.size === 0) {
-      console.log("No staff members found!");
-      await channel.send("No staff members found!");
-      return;
-    }
+  // Start giveaway
+  if (command === "start") {
+    const duration = args[0];
+    const prize = args.slice(1).join(" ");
+    if (!duration || !prize) return message.channel.send("Usage: /start <duration> <prize>");
 
-    // Build a clean embed
-    const embed = new EmbedBuilder()
-      .setTitle("Staff Team")
-      .setColor("Blue")
-      .setDescription(
-        staffMembers
-          .map(
-            m =>
-              `**${m.user.tag}** → ${m.roles.cache
-                .filter(r => STAFF_ROLES.includes(r.id))
-                .map(r => r.name)
-                .join(", ")}`
-          )
-          .join("\n")
-      )
-      .setTimestamp();
+    const giveaway = {
+      id: giveaways.length + 1,
+      prize,
+      endsAt: Date.now() + parseInt(duration) * 1000, // duration in seconds
+      channel: message.channel.id,
+      participants: [],
+    };
+    giveaways.push(giveaway);
 
-    await channel.send({ embeds: [embed] });
-    console.log("Staff list sent successfully!");
-  } catch (err) {
-    console.error("Error fetching members:", err);
+    message.channel.send(`🎉 Giveaway started! Prize: **${prize}** (ID: ${giveaway.id})`);
+  }
+
+  // List giveaways
+  if (command === "list") {
+    if (giveaways.length === 0) return message.channel.send("No active giveaways.");
+    const list = giveaways.map(g => `ID: ${g.id} → Prize: ${g.prize}`).join("\n");
+    message.channel.send(`🎉 **Active Giveaways:**\n${list}`);
+  }
+
+  // End giveaway
+  if (command === "end") {
+    const id = parseInt(args[0]);
+    const giveaway = giveaways.find(g => g.id === id);
+    if (!giveaway) return message.channel.send("Giveaway not found.");
+
+    // Pick a random winner
+    const winner = giveaway.participants.length
+      ? giveaway.participants[Math.floor(Math.random() * giveaway.participants.length)]
+      : "No participants";
+
+    message.channel.send(`🏆 Giveaway ended! Prize: **${giveaway.prize}** → Winner: ${winner}`);
+    giveaways = giveaways.filter(g => g.id !== id);
+  }
+
+  // Join giveaway
+  if (command === "join") {
+    const id = parseInt(args[0]);
+    const giveaway = giveaways.find(g => g.id === id);
+    if (!giveaway) return message.channel.send("Giveaway not found.");
+
+    if (giveaway.participants.includes(message.author.tag)) return message.channel.send("You already joined!");
+    giveaway.participants.push(message.author.tag);
+    message.channel.send(`${message.author.tag} joined the giveaway!`);
   }
 });
 
