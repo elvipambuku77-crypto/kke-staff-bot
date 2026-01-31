@@ -36,15 +36,8 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
 })();
 
 // ===== UTILS =====
-function getStaffRoles(member) {
-  // Get all roles matching hierarchy
-  return member.roles.cache.filter(r =>
-    STAFF_HIERARCHY.some(k => r.name.toLowerCase() === r.name.toLowerCase() && r.name.toLowerCase().includes(k.toLowerCase()))
-  );
-}
-
-// Get the **highest role** index
 function getStaffIndex(member) {
+  // Return highest role index
   let highestIndex = -1;
   member.roles.cache.forEach(r => {
     const idx = STAFF_HIERARCHY.findIndex(k => k.toLowerCase() === r.name.toLowerCase());
@@ -53,7 +46,7 @@ function getStaffIndex(member) {
   return highestIndex;
 }
 
-// Generate styled embed with mentions
+// Generate styled embed
 function generateStaffEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📋 Staff Team")
@@ -68,11 +61,28 @@ function generateStaffEmbed(guild) {
     const members = role.members.filter(m => getStaffIndex(m) === index); // only highest role
     if (!members.size) return;
 
-    const mentionString = members.map(m => `<@${m.id}>`).join("\n");
-    embed.addFields({ name: `${role.name} (${members.size})`, value: `${role} | ${mentionString}` });
+    const mentionString = members.map(m => m.user.tag).join("\n");
+    embed.addFields({ name: `${role.name} (${members.size})`, value: mentionString });
   });
 
   return embed;
+}
+
+// Generate plain ping message
+function generatePingMessage(guild) {
+  let pingMessage = "";
+  STAFF_HIERARCHY.forEach((roleName, index) => {
+    const role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+    if (!role) return;
+
+    const members = role.members.filter(m => getStaffIndex(m) === index);
+    if (!members.size) return;
+
+    // Mention role + members
+    pingMessage += `**${role.name} (${members.size})**: ${role}\n`;
+    pingMessage += members.map(m => `<@${m.id}>`).join(" ") + "\n\n";
+  });
+  return pingMessage || "_No staff members found_";
 }
 
 // ===== COMMAND HANDLER =====
@@ -84,11 +94,12 @@ client.on("interactionCreate", async interaction => {
   if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
 
   if (interaction.commandName === "put" || interaction.commandName === "update") {
-    await guild.members.fetch(); // fetch all members to be sure
+    await guild.members.fetch(); // fetch all members
 
     const embed = generateStaffEmbed(guild);
+    const pingMessage = generatePingMessage(guild);
 
-    // Try to find previous message by bot
+    // Check for previous bot message
     const messages = await channel.messages.fetch({ limit: 50 });
     const botMessage = messages.find(m => m.author.id === client.user.id);
 
@@ -99,6 +110,9 @@ client.on("interactionCreate", async interaction => {
       await channel.send({ embeds: [embed] });
       await interaction.reply({ content: "✅ Staff Team created!", ephemeral: true });
     }
+
+    // Send plain ping message to actually notify roles & members
+    if (pingMessage) await channel.send({ content: pingMessage });
   }
 });
 
