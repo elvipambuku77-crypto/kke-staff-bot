@@ -1,4 +1,11 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  REST,
+  Routes,
+  EmbedBuilder
+} = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -6,10 +13,9 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// Staff roles in order
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
-  { key: "co founder", label: "💜 Co Founder" },
+  { key: "co founder", label: "💜 Founder" },
   { key: "own┇", label: "🖤 Owner" },
   { key: "co┇", label: "💙 Co Owner" },
   { key: "hos┇", label: "🔥 Head of Staff" },
@@ -27,31 +33,28 @@ const client = new Client({
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log("✅ Slash commands registered");
-  } catch (err) {
-    console.error("Error registering commands:", err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 })();
 
-// Get highest staff role only
+// Get highest staff role
 function getHighestStaff(member) {
-  for (const r of ROLE_MAP) {
-    const role = member.roles.cache.find(role => role.name.toLowerCase().includes(r.key));
-    if (role) return r;
+  for (const roleDef of ROLE_MAP) {
+    const role = member.roles.cache.find(r =>
+      r.name.toLowerCase().includes(roleDef.key)
+    );
+    if (role) return roleDef;
   }
   return null;
 }
 
-// Build the staff embed safely
+// Build staff embed
 function buildEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
@@ -59,7 +62,9 @@ function buildEmbed(guild) {
     .setTimestamp();
 
   ROLE_MAP.forEach(roleDef => {
-    const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
+    const role = guild.roles.cache.find(r =>
+      r.name.toLowerCase().includes(roleDef.key)
+    );
     if (!role) return;
 
     const members = guild.members.cache.filter(m => {
@@ -79,52 +84,25 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// Slash command handler
+// Handle commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  try {
-    await interaction.deferReply({ ephemeral: true });
+  await interaction.guild.members.fetch();
 
-    // Fetch all members safely
-    try {
-      await interaction.guild.members.fetch();
-    } catch (err) {
-      console.warn("Could not fetch members, continuing anyway.");
-    }
+  const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
+  if (!channel)
+    return interaction.reply({ content: "Staff channel not found", ephemeral: true });
 
-    const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
-    if (!channel) return await interaction.editReply("❌ Staff channel not found");
+  const embed = buildEmbed(interaction.guild);
 
-    const embed = buildEmbed(interaction.guild);
+  const msgs = await channel.messages.fetch({ limit: 10 });
+  const old = msgs.find(m => m.author.id === client.user.id);
 
-    const payload = {
-      embeds: [embed],
-      allowedMentions: { roles: true, users: true } // PINGS BOTH
-    };
+  if (old) await old.edit({ embeds: [embed] });
+  else await channel.send({ embeds: [embed] });
 
-    // Edit last bot message if exists
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const lastMsg = messages.find(m => m.author.id === client.user.id);
-
-    if (lastMsg) await lastMsg.edit(payload);
-    else await channel.send(payload);
-
-    await interaction.editReply("✅ Staff team updated");
-  } catch (err) {
-    console.error("INTERACTION ERROR >>>", err);
-    try {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.editReply("❌ Something went wrong, check console logs.");
-      } else {
-        await interaction.reply({ content: "❌ Something went wrong, check console logs.", ephemeral: true });
-      }
-    } catch {}
-  }
-});
-
-client.once("ready", () => {
-  console.log(`Logged in as ${client.user.tag} ✅`);
+  await interaction.reply({ content: "✅ Staff team updated", ephemeral: true });
 });
 
 client.login(TOKEN);
