@@ -1,20 +1,12 @@
-const {
-  Client,
-  GatewayIntentBits,
-  SlashCommandBuilder,
-  REST,
-  Routes,
-  PermissionFlagsBits,
-  EmbedBuilder
-} = require("discord.js");
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const LOG_CHANNEL_ID = "1444683724112531540";
+const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// KEYWORDS for staff roles (order = hierarchy)
+// Staff hierarchy keywords (low → high)
 const STAFF_KEYWORDS = ["Staff", "Helper", "Mod", "Admin", "Manager", "Head", "Co Owner", "Owner"];
 
 const client = new Client({
@@ -24,34 +16,21 @@ const client = new Client({
 // ===== SLASH COMMANDS =====
 const commands = [
   new SlashCommandBuilder()
-    .setName("promote")
-    .setDescription("Promote a staff member")
-    .addUserOption(o => o.setName("user").setDescription("Staff member").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-
+    .setName("put")
+    .setDescription("Create the staff team list"),
   new SlashCommandBuilder()
-    .setName("demote")
-    .setDescription("Demote a staff member")
-    .addUserOption(o => o.setName("user").setDescription("Staff member").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-
-  new SlashCommandBuilder()
-    .setName("staffrank")
-    .setDescription("Check staff rank")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-].map(cmd => cmd.toJSON());
+    .setName("update")
+    .setDescription("Update the staff team list")
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
   await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-  console.log("PD slash commands registered");
+  console.log("Staff Team slash commands registered");
 })();
 
 // ===== UTIL =====
 function getStaffRoles(member) {
-  // Return all member roles that match the keywords
   return member.roles.cache.filter(r =>
     STAFF_KEYWORDS.some(k => r.name.toLowerCase().includes(k.toLowerCase()))
   );
@@ -61,7 +40,6 @@ function getStaffIndex(member) {
   const roles = getStaffRoles(member);
   if (!roles.size) return -1;
 
-  // Return the **highest role index** based on STAFF_KEYWORDS order
   let highestIndex = -1;
   roles.forEach(r => {
     const idx = STAFF_KEYWORDS.findIndex(k => r.name.toLowerCase().includes(k.toLowerCase()));
@@ -70,89 +48,48 @@ function getStaffIndex(member) {
   return highestIndex;
 }
 
-// ===== INTERACTIONS =====
+function generateStaffMessage(guild) {
+  let msg = "**📋 Staff Team**\n\n";
+
+  STAFF_KEYWORDS.forEach(keyword => {
+    const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(keyword.toLowerCase()));
+    if (!role) return;
+
+    const members = role.members.map(m => m.user.tag);
+    if (!members.length) return;
+
+    msg += `**${role.name}** (${members.length}):\n`;
+    msg += members.join("\n") + "\n\n";
+  });
+
+  if (msg === "**📋 Staff Team**\n\n") msg += "_No staff members found_";
+
+  return msg;
+}
+
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const guild = interaction.guild;
-  const executor = interaction.member;
-  const target = await guild.members.fetch(interaction.options.getUser("user").id);
+  const channel = guild.channels.cache.get(STAFF_CHANNEL_ID);
+  if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
 
-  const execRank = getStaffIndex(executor);
-  const targetRank = getStaffIndex(target);
+  if (interaction.commandName === "put" || interaction.commandName === "update") {
+    await guild.members.fetch(); // fetch all members to make sure nothing is missing
+    const messageContent = generateStaffMessage(guild);
 
-  if (interaction.commandName === "staffrank") {
-    if (targetRank === -1)
-      return interaction.reply({ content: "❌ User is not staff", ephemeral: true });
+    // Try to find previous message by bot
+    const messages = await channel.messages.fetch({ limit: 50 });
+    const botMessage = messages.find(m => m.author.id === client.user.id);
 
-    return interaction.reply({
-      content: `✅ ${target.user.tag} → **${STAFF_KEYWORDS[targetRank]}**`,
-      ephemeral: true
-    });
-  }
-
-  if (execRank === -1)
-    return interaction.reply({ content: "❌ You are NOT staff", ephemeral: true });
-
-  if (targetRank === -1)
-    return interaction.reply({ content: "❌ Target is not staff", ephemeral: true });
-
-  if (execRank <= targetRank)
-    return interaction.reply({ content: "❌ You cannot manage someone equal or higher than you", ephemeral: true });
-
-  const reason = interaction.options.getString("reason");
-
-  // ===== PROMOTE =====
-  if (interaction.commandName === "promote") {
-    if (targetRank + 1 >= STAFF_KEYWORDS.length)
-      return interaction.reply({ content: "❌ Already highest rank", ephemeral: true });
-
-    // Remove all staff roles in keyword list and add new rank
-    getStaffRoles(target).forEach(r => target.roles.remove(r.id));
-    const newRoleName = STAFF_KEYWORDS[targetRank + 1];
-    const newRole = guild.roles.cache.find(r => r.name.toLowerCase().includes(newRoleName.toLowerCase()));
-    if (newRole) await target.roles.add(newRole.id);
-
-    const embed = new EmbedBuilder()
-      .setColor("Green")
-      .setTitle("📈 Staff Promotion")
-      .addFields(
-        { name: "Staff", value: target.user.tag, inline: true },
-        { name: "From", value: STAFF_KEYWORDS[targetRank], inline: true },
-        { name: "To", value: STAFF_KEYWORDS[targetRank + 1], inline: true },
-        { name: "By", value: executor.user.tag },
-        { name: "Reason", value: reason }
-      )
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-    guild.channels.cache.get(LOG_CHANNEL_ID)?.send({ embeds: [embed] });
-  }
-
-  // ===== DEMOTE =====
-  if (interaction.commandName === "demote") {
-    if (targetRank - 1 < 0)
-      return interaction.reply({ content: "❌ Already lowest rank", ephemeral: true });
-
-    getStaffRoles(target).forEach(r => target.roles.remove(r.id));
-    const newRoleName = STAFF_KEYWORDS[targetRank - 1];
-    const newRole = guild.roles.cache.find(r => r.name.toLowerCase().includes(newRoleName.toLowerCase()));
-    if (newRole) await target.roles.add(newRole.id);
-
-    const embed = new EmbedBuilder()
-      .setColor("Red")
-      .setTitle("📉 Staff Demotion")
-      .addFields(
-        { name: "Staff", value: target.user.tag, inline: true },
-        { name: "From", value: STAFF_KEYWORDS[targetRank], inline: true },
-        { name: "To", value: STAFF_KEYWORDS[targetRank - 1], inline: true },
-        { name: "By", value: executor.user.tag },
-        { name: "Reason", value: reason }
-      )
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-    guild.channels.cache.get(LOG_CHANNEL_ID)?.send({ embeds: [embed] });
+    if (botMessage) {
+      await botMessage.edit(messageContent);
+      await interaction.reply({ content: "✅ Staff Team updated!", ephemeral: true });
+    } else {
+      await channel.send(messageContent);
+      await interaction.reply({ content: "✅ Staff Team created!", ephemeral: true });
+    }
   }
 });
 
