@@ -6,17 +6,17 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// Staff hierarchy (lowest → highest)
+// Hierarchy keywords, lowest -> highest
 const STAFF_HIERARCHY = [
-  "Helper",
-  "Mod",
-  "Admin",
-  "Manager",
-  "Head of Staff",
-  "Co Owner",
-  "Owner",
-  "Co Founder",
-  "Main Founder"
+  "helper",
+  "mod",
+  "admin",
+  "manager",
+  "head",
+  "co owner",
+  "owner",
+  "co founder",
+  "main founder"
 ];
 
 const client = new Client({
@@ -35,18 +35,19 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   console.log("Staff Team slash commands registered");
 })();
 
-// ===== UTILS =====
-function getStaffIndex(member) {
-  // Return highest role index
+// ===== UTIL =====
+
+// Return highest staff role index of a member
+function getHighestStaffRoleIndex(member) {
   let highestIndex = -1;
   member.roles.cache.forEach(r => {
-    const idx = STAFF_HIERARCHY.findIndex(k => k.toLowerCase() === r.name.toLowerCase());
+    const idx = STAFF_HIERARCHY.findIndex(k => r.name.toLowerCase().includes(k));
     if (idx > highestIndex) highestIndex = idx;
   });
   return highestIndex;
 }
 
-// Generate styled embed
+// Generate embed
 function generateStaffEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📋 Staff Team")
@@ -54,15 +55,12 @@ function generateStaffEmbed(guild) {
     .setFooter({ text: "Staff Team | Updated automatically" })
     .setTimestamp();
 
-  STAFF_HIERARCHY.forEach((roleName, index) => {
-    const role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
-    if (!role) return;
-
-    const members = role.members.filter(m => getStaffIndex(m) === index); // only highest role
+  STAFF_HIERARCHY.forEach((keyword, index) => {
+    const members = guild.members.cache.filter(m => getHighestStaffRoleIndex(m) === index);
     if (!members.size) return;
 
-    const mentionString = members.map(m => m.user.tag).join("\n");
-    embed.addFields({ name: `${role.name} (${members.size})`, value: mentionString });
+    const memberNames = members.map(m => m.user.tag).join("\n");
+    embed.addFields({ name: `${keyword.charAt(0).toUpperCase() + keyword.slice(1)} (${members.size})`, value: memberNames });
   });
 
   return embed;
@@ -70,19 +68,16 @@ function generateStaffEmbed(guild) {
 
 // Generate plain ping message
 function generatePingMessage(guild) {
-  let pingMessage = "";
-  STAFF_HIERARCHY.forEach((roleName, index) => {
-    const role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
-    if (!role) return;
-
-    const members = role.members.filter(m => getStaffIndex(m) === index);
+  let pingMsg = "";
+  STAFF_HIERARCHY.forEach((keyword, index) => {
+    const members = guild.members.cache.filter(m => getHighestStaffRoleIndex(m) === index);
     if (!members.size) return;
 
-    // Mention role + members
-    pingMessage += `**${role.name} (${members.size})**: ${role}\n`;
-    pingMessage += members.map(m => `<@${m.id}>`).join(" ") + "\n\n";
+    pingMsg += `**${keyword.charAt(0).toUpperCase() + keyword.slice(1)} (${members.size})**:\n`;
+    pingMsg += members.map(m => `<@${m.id}>`).join(" ") + "\n\n";
   });
-  return pingMessage || "_No staff members found_";
+
+  return pingMsg || "_No staff members found_";
 }
 
 // ===== COMMAND HANDLER =====
@@ -99,7 +94,7 @@ client.on("interactionCreate", async interaction => {
     const embed = generateStaffEmbed(guild);
     const pingMessage = generatePingMessage(guild);
 
-    // Check for previous bot message
+    // Edit existing bot message or send new
     const messages = await channel.messages.fetch({ limit: 50 });
     const botMessage = messages.find(m => m.author.id === client.user.id);
 
@@ -111,7 +106,7 @@ client.on("interactionCreate", async interaction => {
       await interaction.reply({ content: "✅ Staff Team created!", ephemeral: true });
     }
 
-    // Send plain ping message to actually notify roles & members
+    // Send ping message separately to notify
     if (pingMessage) await channel.send({ content: pingMessage });
   }
 });
