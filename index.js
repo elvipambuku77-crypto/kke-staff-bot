@@ -13,9 +13,10 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
+// ROLE DETECTION BY NAME (NO IDS)
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
-  { key: "co founder", label: "💜 Founder" },
+  { key: "co founder", label: "💜 Co Founder" },
   { key: "own┇", label: "🖤 Owner" },
   { key: "co┇", label: "💙 Co Owner" },
   { key: "hos┇", label: "🔥 Head of Staff" },
@@ -29,11 +30,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// Register slash commands
+// SLASH COMMANDS
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
-].map(c => c.toJSON());
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
@@ -43,7 +44,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   );
 })();
 
-// Get highest staff role
+// GET HIGHEST STAFF ROLE ONLY
 function getHighestStaff(member) {
   for (const roleDef of ROLE_MAP) {
     const role = member.roles.cache.find(r =>
@@ -54,7 +55,7 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build staff embed
+// BUILD EMBED
 function buildEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
@@ -84,25 +85,40 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// Handle commands
+// COMMAND HANDLER
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   await interaction.guild.members.fetch();
 
   const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!channel)
-    return interaction.reply({ content: "Staff channel not found", ephemeral: true });
+  if (!channel) {
+    return interaction.reply({
+      content: "Staff channel not found",
+      ephemeral: true
+    });
+  }
 
   const embed = buildEmbed(interaction.guild);
 
+  const payload = {
+    embeds: [embed],
+    allowedMentions: {
+      roles: true,
+      users: true
+    }
+  };
+
   const msgs = await channel.messages.fetch({ limit: 10 });
-  const old = msgs.find(m => m.author.id === client.user.id);
+  const oldMsg = msgs.find(m => m.author.id === client.user.id);
 
-  if (old) await old.edit({ embeds: [embed] });
-  else await channel.send({ embeds: [embed] });
+  if (oldMsg) await oldMsg.edit(payload);
+  else await channel.send(payload);
 
-  await interaction.reply({ content: "✅ Staff team updated", ephemeral: true });
+  await interaction.reply({
+    content: "✅ Staff team updated",
+    ephemeral: true
+  });
 });
 
 client.login(TOKEN);
