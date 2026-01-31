@@ -1,162 +1,173 @@
 const {
   Client,
   GatewayIntentBits,
+  SlashCommandBuilder,
   REST,
   Routes,
-  SlashCommandBuilder,
-  EmbedBuilder,
-  ButtonBuilder,
-  ActionRowBuilder,
-  ButtonStyle
+  PermissionFlagsBits,
+  EmbedBuilder
 } = require("discord.js");
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID; // Your bot application ID
-const GUILD_ID = process.env.GUILD_ID; // Your server ID
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
-let giveaways = [];
+/* ===== STAFF HIERARCHY (LOW → HIGH) ===== */
+const STAFF_ROLES = [
+  { name: "Helper", id: "1466124328713195583" },
+  { name: "Mod", id: "1466124409763926041" },
+  { name: "Admin", id: "1466124454399705255" },
+  { name: "Manager", id: "1466124732490584074" },
+  { name: "Head Of Staff", id: "1466124767659561073" },
+  { name: "Co Owner", id: "1466124822424719391" },
+  { name: "Owner", id: "1466124847011598428" }
+];
 
-function parseDuration(input) {
-  const match = input.match(/^(\d+)(s|m|h)$/);
-  if (!match) return null;
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  if (unit === "s") return value * 1000;
-  if (unit === "m") return value * 60 * 1000;
-  if (unit === "h") return value * 60 * 60 * 1000;
-  return null;
-}
+const LOG_CHANNEL_ID = "1444683724112531540";
 
-// Register slash commands
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
+});
+
+/* ===== SLASH COMMANDS ===== */
 const commands = [
   new SlashCommandBuilder()
-    .setName("start")
-    .setDescription("Start a giveaway")
-    .addStringOption(opt => opt.setName("duration").setDescription("10s, 5m, 2h").setRequired(true))
-    .addStringOption(opt => opt.setName("prize").setDescription("Prize name").setRequired(true)),
-  new SlashCommandBuilder().setName("help").setDescription("Show giveaway commands"),
-  new SlashCommandBuilder().setName("list").setDescription("Show active giveaways")
+    .setName("promote")
+    .setDescription("Promote a staff member")
+    .addUserOption(o =>
+      o.setName("user").setDescription("Staff member").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason").setDescription("Reason").setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
+  new SlashCommandBuilder()
+    .setName("demote")
+    .setDescription("Demote a staff member")
+    .addUserOption(o =>
+      o.setName("user").setDescription("Staff member").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason").setDescription("Reason").setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
+  new SlashCommandBuilder()
+    .setName("staffrank")
+    .setDescription("Check staff rank")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)
+    )
 ].map(cmd => cmd.toJSON());
 
+/* ===== REGISTER COMMANDS ===== */
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
-  try {
-    console.log("Refreshing slash commands...");
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log("Slash commands registered!");
-  } catch (err) { console.error(err); }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+  console.log("PD slash commands registered");
 })();
 
-client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
+/* ===== UTIL ===== */
+function getStaffIndex(member) {
+  return STAFF_ROLES.findIndex(r => member.roles.cache.has(r.id));
+}
 
+/* ===== INTERACTIONS ===== */
 client.on("interactionCreate", async interaction => {
-  if (interaction.isCommand()) {
-    const { commandName, options, channel } = interaction;
+  if (!interaction.isChatInputCommand()) return;
 
-    if (commandName === "help") {
-      return interaction.reply({
-        content: `🎉 **Giveaway Commands**\n/start <duration> <prize> → Start a giveaway\n/list → Show active giveaways\nDuration: 10s, 5m, 2h`,
-        ephemeral: true
-      });
-    }
+  const guild = interaction.guild;
+  const executor = interaction.member;
+  const target = await guild.members.fetch(
+    interaction.options.getUser("user").id
+  );
 
-    if (commandName === "list") {
-      if (giveaways.length === 0) return interaction.reply({ content: "No active giveaways.", ephemeral: true });
-      const list = giveaways.map(g => `ID: ${g.id} → Prize: **${g.prize}** → Participants: ${g.participants.length}`).join("\n");
-      return interaction.reply({ content: `🎉 **Active Giveaways:**\n${list}`, ephemeral: true });
-    }
+  const execRank = getStaffIndex(executor);
+  const targetRank = getStaffIndex(target);
 
-    if (commandName === "start") {
-      const durationInput = options.getString("duration");
-      const prize = options.getString("prize");
-      const durationMs = parseDuration(durationInput);
+  if (interaction.commandName === "staffrank") {
+    if (targetRank === -1)
+      return interaction.reply({ content: "❌ User is not staff", ephemeral: true });
 
-      if (!durationMs) return interaction.reply({ content: "Invalid duration! Use 10s, 5m, 2h", ephemeral: true });
-
-      const giveawayId = giveaways.length + 1;
-      const giveaway = {
-        id: giveawayId,
-        prize,
-        endsAt: Date.now() + durationMs,
-        participants: [],
-        messageId: null,
-        channelId: channel.id
-      };
-      giveaways.push(giveaway);
-
-      // REPLY IMMEDIATELY TO AVOID "DID NOT RESPOND"
-      await interaction.reply({ content: `✅ Giveaway started! Prize: **${prize}**`, ephemeral: true });
-
-      // Embed for giveaway
-      const embed = new EmbedBuilder()
-        .setTitle(`🎉 Giveaway #${giveawayId} ✨`)
-        .setDescription(`Prize: **${prize}**\nTime left: **${durationInput}** ⏳\nParticipants: 0 🎁\nClick JOIN to enter!`)
-        .setColor("Random")
-        .setTimestamp();
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`join_${giveawayId}`)
-          .setLabel("🎁 JOIN")
-          .setStyle(ButtonStyle.Primary)
-      );
-
-      const msg = await channel.send({ embeds: [embed], components: [row] });
-      giveaway.messageId = msg.id;
-
-      // Auto-update countdown and participants every second
-      const interval = setInterval(async () => {
-        const g = giveaways.find(g => g.id === giveawayId);
-        if (!g) return clearInterval(interval);
-
-        const now = Date.now();
-        const remainingMs = g.endsAt - now;
-        if (remainingMs <= 0) {
-          clearInterval(interval);
-          const winner = g.participants.length ? g.participants[Math.floor(Math.random() * g.participants.length)] : "No participants";
-
-          const endEmbed = EmbedBuilder.from(embed)
-            .setTitle(`🏆 Giveaway Ended! 🎉`)
-            .setDescription(`Prize: **${g.prize}**\nWinner: **${winner}**\nParticipants: ${g.participants.length} 🎁`)
-            .setColor("Gold");
-
-          const message = await channel.messages.fetch(g.messageId);
-          await message.edit({ embeds: [endEmbed], components: [] });
-
-          giveaways = giveaways.filter(gw => gw.id !== giveawayId);
-          return;
-        }
-
-        const seconds = Math.floor((remainingMs / 1000) % 60);
-        const minutes = Math.floor((remainingMs / (1000 * 60)) % 60);
-        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-        const timerText = `${hours > 0 ? hours + "h " : ""}${minutes > 0 ? minutes + "m " : ""}${seconds}s`;
-
-        const updateEmbed = EmbedBuilder.from(embed)
-          .setDescription(`Prize: **${prize}**\nTime left: **${timerText}** ⏳\nParticipants: ${g.participants.length} 🎁\nClick JOIN to enter!`)
-          .setColor("Random");
-
-        const message = await channel.messages.fetch(g.messageId);
-        await message.edit({ embeds: [updateEmbed] });
-      }, 1000);
-    }
+    return interaction.reply({
+      content: `✅ ${target.user.tag} → **${STAFF_ROLES[targetRank].name}**`,
+      ephemeral: true
+    });
   }
 
-  // JOIN BUTTON
-  if (interaction.isButton()) {
-    const [action, id] = interaction.customId.split("_");
-    if (action !== "join") return;
+  if (execRank === -1)
+    return interaction.reply({ content: "❌ You are not staff", ephemeral: true });
 
-    const giveaway = giveaways.find(g => g.id === parseInt(id));
-    if (!giveaway) return interaction.reply({ content: "Giveaway not found.", ephemeral: true });
+  if (targetRank === -1)
+    return interaction.reply({ content: "❌ Target is not staff", ephemeral: true });
 
-    if (giveaway.participants.includes(interaction.user.tag))
-      return interaction.reply({ content: "You already joined!", ephemeral: true });
+  if (execRank <= targetRank)
+    return interaction.reply({
+      content: "❌ You cannot manage someone equal or higher than you",
+      ephemeral: true
+    });
 
-    giveaway.participants.push(interaction.user.tag);
-    await interaction.reply({ content: `🎉 ${interaction.user.tag} joined the giveaway!`, ephemeral: true });
+  const reason = interaction.options.getString("reason");
+
+  /* ===== PROMOTE ===== */
+  if (interaction.commandName === "promote") {
+    if (targetRank + 1 >= STAFF_ROLES.length)
+      return interaction.reply({ content: "❌ Already highest rank", ephemeral: true });
+
+    const oldRole = STAFF_ROLES[targetRank];
+    const newRole = STAFF_ROLES[targetRank + 1];
+
+    await target.roles.remove(oldRole.id);
+    await target.roles.add(newRole.id);
+
+    const embed = new EmbedBuilder()
+      .setColor("Green")
+      .setTitle("📈 Staff Promotion")
+      .addFields(
+        { name: "Staff", value: target.user.tag, inline: true },
+        { name: "From", value: oldRole.name, inline: true },
+        { name: "To", value: newRole.name, inline: true },
+        { name: "By", value: executor.user.tag },
+        { name: "Reason", value: reason }
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+    guild.channels.cache.get(LOG_CHANNEL_ID)?.send({ embeds: [embed] });
+  }
+
+  /* ===== DEMOTE ===== */
+  if (interaction.commandName === "demote") {
+    if (targetRank - 1 < 0)
+      return interaction.reply({ content: "❌ Already lowest rank", ephemeral: true });
+
+    const oldRole = STAFF_ROLES[targetRank];
+    const newRole = STAFF_ROLES[targetRank - 1];
+
+    await target.roles.remove(oldRole.id);
+    await target.roles.add(newRole.id);
+
+    const embed = new EmbedBuilder()
+      .setColor("Red")
+      .setTitle("📉 Staff Demotion")
+      .addFields(
+        { name: "Staff", value: target.user.tag, inline: true },
+        { name: "From", value: oldRole.name, inline: true },
+        { name: "To", value: newRole.name, inline: true },
+        { name: "By", value: executor.user.tag },
+        { name: "Reason", value: reason }
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+    guild.channels.cache.get(LOG_CHANNEL_ID)?.send({ embeds: [embed] });
   }
 });
 
