@@ -30,7 +30,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// SLASH COMMANDS
+// REGISTER SLASH COMMANDS
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
@@ -85,28 +85,24 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// COMMAND HANDLER
+// HANDLE COMMANDS (WITH DEFER FIX)
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+  await interaction.deferReply({ ephemeral: true });
 
   await interaction.guild.members.fetch();
 
   const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
   if (!channel) {
-    return interaction.reply({
-      content: "Staff channel not found",
-      ephemeral: true
-    });
+    return interaction.editReply("❌ Staff channel not found");
   }
 
   const embed = buildEmbed(interaction.guild);
 
   const payload = {
     embeds: [embed],
-    allowedMentions: {
-      roles: true,
-      users: true
-    }
+    allowedMentions: { roles: true, users: true }
   };
 
   const msgs = await channel.messages.fetch({ limit: 10 });
@@ -115,10 +111,7 @@ client.on("interactionCreate", async interaction => {
   if (oldMsg) await oldMsg.edit(payload);
   else await channel.send(payload);
 
-  await interaction.reply({
-    content: "✅ Staff team updated",
-    ephemeral: true
-  });
+  await interaction.editReply("✅ Staff team updated");
 });
 
 client.login(TOKEN);
