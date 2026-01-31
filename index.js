@@ -6,7 +6,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// STAFF ROLES DETECT BY NAME
+// STAFF ROLE NAMES IN ORDER (no IDs needed)
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
   { key: "co founder", label: "💜 Co Founder" },
@@ -23,11 +23,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// Register commands
+// REGISTER SLASH COMMANDS
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
-].map(c => c.toJSON());
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
@@ -42,39 +42,36 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   }
 })();
 
-// Get highest staff role only
+// Get highest staff role for a member
 function getHighestStaff(member) {
   for (const r of ROLE_MAP) {
-    const role = member.roles.cache.find(x =>
-      x.name.toLowerCase().includes(r.key)
-    );
+    const role = member.roles.cache.find(role => role.name.toLowerCase().includes(r.key));
     if (role) return r;
   }
   return null;
 }
 
-// Build embed safely
+// Build the staff embed
 function buildEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
     .setColor(0x5865f2)
     .setTimestamp();
 
-  ROLE_MAP.forEach(r => {
-    const role = guild.roles.cache.find(x =>
-      x.name.toLowerCase().includes(r.key)
-    );
-    if (!role) return; // skip missing roles
+  ROLE_MAP.forEach(roleDef => {
+    const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(roleDef.key));
+    if (!role) return;
 
     const members = guild.members.cache.filter(m => {
       const highest = getHighestStaff(m);
-      return highest && highest.key === r.key;
+      return highest && highest.key === roleDef.key;
     });
 
-    if (!members.size) return; // skip if no members
+    if (!members.size) return;
 
+    // Add field with role ping + members ping
     embed.addFields({
-      name: `${r.label} — <@&${role.id}>`,
+      name: `${roleDef.label} — <@&${role.id}>`,
       value: members.map(m => `• <@${m.id}>`).join("\n"),
       inline: false
     });
@@ -83,15 +80,15 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// Handle slash commands
+// HANDLE SLASH COMMANDS
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    // Immediately defer so Discord doesn't timeout
+    // DEFER IMMEDIATELY to prevent timeout
     await interaction.deferReply({ ephemeral: true });
 
-    // Fetch all members to ensure cache
+    // FETCH MEMBERS TO ENSURE CACHE
     await interaction.guild.members.fetch();
 
     const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
@@ -101,24 +98,24 @@ client.on("interactionCreate", async interaction => {
 
     const payload = {
       embeds: [embed],
-      allowedMentions: { roles: true, users: true }
+      allowedMentions: { roles: true, users: true } // 🔥 THIS MAKES ROLES + MEMBERS PING
     };
 
-    // Fetch last 10 messages to edit instead of spamming
-    const msgs = await channel.messages.fetch({ limit: 10 });
-    const oldMsg = msgs.find(m => m.author.id === client.user.id);
+    // EDIT last bot message if exists
+    const messages = await channel.messages.fetch({ limit: 10 });
+    const last = messages.find(m => m.author.id === client.user.id);
 
-    if (oldMsg) await oldMsg.edit(payload);
+    if (last) await last.edit(payload);
     else await channel.send(payload);
 
     await interaction.editReply("✅ Staff team updated");
   } catch (err) {
-    console.error("Interaction error:", err);
+    console.error("INTERACTION ERROR >>>", err);
     try {
       if (interaction.replied || interaction.deferred) {
-        await interaction.editReply("❌ Something went wrong, check logs.");
+        await interaction.editReply("❌ Something went wrong, check console logs.");
       } else {
-        await interaction.reply({ content: "❌ Something went wrong, check logs.", ephemeral: true });
+        await interaction.reply({ content: "❌ Something went wrong, check console logs.", ephemeral: true });
       }
     } catch {}
   }
