@@ -12,8 +12,8 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-/* ===== STAFF HIERARCHY (LOW → HIGH) ===== */
 const STAFF_ROLES = [
+  { name: "Staff", id: "1467162751167238165" }, // your real staff role
   { name: "Helper", id: "1466124328713195583" },
   { name: "Mod", id: "1466124409763926041" },
   { name: "Admin", id: "1466124454399705255" },
@@ -32,7 +32,6 @@ const client = new Client({
   ]
 });
 
-/* ===== SLASH COMMANDS ===== */
 const commands = [
   new SlashCommandBuilder()
     .setName("promote")
@@ -64,7 +63,6 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-/* ===== REGISTER COMMANDS ===== */
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
   await rest.put(
@@ -74,12 +72,10 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   console.log("PD slash commands registered");
 })();
 
-/* ===== UTIL ===== */
 function getStaffIndex(member) {
   return STAFF_ROLES.findIndex(r => member.roles.cache.has(r.id));
 }
 
-/* ===== INTERACTIONS ===== */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -103,7 +99,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (execRank === -1)
-    return interaction.reply({ content: "❌ You are not staff", ephemeral: true });
+    return interaction.reply({ content: "❌ You are NOT staff", ephemeral: true });
 
   if (targetRank === -1)
     return interaction.reply({ content: "❌ Target is not staff", ephemeral: true });
