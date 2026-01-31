@@ -60,9 +60,9 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build embed and role ping message
+// Build staff embed + top line role pings
 function buildStaffMessage(guild) {
-  let content = ""; // this will ping the roles
+  let rolePingLine = ""; // This pings roles at the top
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
     .setColor(0x5865f2)
@@ -74,6 +74,7 @@ function buildStaffMessage(guild) {
     );
     if (!role) return;
 
+    // members whose highest role is this
     const members = guild.members.cache.filter(m => {
       const highest = getHighestStaff(m);
       return highest && highest.key === roleDef.key;
@@ -81,18 +82,19 @@ function buildStaffMessage(guild) {
 
     if (!members.size) return;
 
-    // add to embed
+    // Add role ping to the top line
+    rolePingLine += `<@&${role.id}> `;
+
+    // Add members inside embed
     embed.addFields({
-      name: `${roleDef.label} — ${role.name}`, // show role name in embed
-      value: members.map(m => `• ${m.user.tag}`).join("\n"), // member names in embed
+      name: `${roleDef.label} — ${role.name}`,
+      value: members.map(m => `• ${m.user.tag}`).join("\n"),
       inline: false
     });
-
-    // add role ping to content
-    content += `<@&${role.id}> ` + members.map(m => `<@${m.id}>`).join(" ") + "\n";
   });
 
-  return { embed, content };
+  if (!rolePingLine) rolePingLine = "No staff roles found!";
+  return { embed, rolePingLine };
 }
 
 // Handle slash commands
@@ -113,16 +115,16 @@ client.on("interactionCreate", async interaction => {
     if (!channel)
       return interaction.editReply({ content: "❌ Staff channel not found" });
 
-    const { embed, content } = buildStaffMessage(interaction.guild);
+    const { embed, rolePingLine } = buildStaffMessage(interaction.guild);
 
     // Edit last bot message if exists
     const msgs = await channel.messages.fetch({ limit: 10 });
     const old = msgs.find(m => m.author.id === client.user.id);
 
     const payload = {
-      content: content || "No staff members found!",
+      content: rolePingLine, // pings all roles at top
       embeds: [embed],
-      allowedMentions: { parse: ["roles", "users"] } // ✅ roles and users will ping
+      allowedMentions: { parse: ["roles", "users"] } // ✅ roles & members ping
     };
 
     if (old) await old.edit(payload);
