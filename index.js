@@ -1,4 +1,11 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  REST,
+  Routes,
+  EmbedBuilder
+} = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -6,109 +13,91 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// Hierarchy keywords, lowest -> highest
-const STAFF_HIERARCHY = [
-  "helper",
-  "mod",
-  "admin",
-  "manager",
-  "head",
-  "co owner",
-  "owner",
-  "co founder",
-  "main founder"
+const ROLE_MAP = [
+  { key: "main founder", label: "👑 Main Founder", ping: "@👑 Main Founder" },
+  { key: "co founder", label: "💜 Founder", ping: "@💜 Founder" },
+  { key: "own┇", label: "🖤 Owner", ping: "@🖤 Owner" },
+  { key: "co┇", label: "💙 Co Owner", ping: "@💙 Co Owner" },
+  { key: "hos┇", label: "🔥 Head of Staff", ping: "@🔥 Head of Staff" },
+  { key: "man┇", label: "💎 Manager", ping: "@💎 Manager" },
+  { key: "adm┇", label: "🛡️ Admin", ping: "@🛡️ Admin" },
+  { key: "mod┇", label: "⚔️ Moderator", ping: "@⚔️ Moderator" },
+  { key: "hel┇", label: "🌟 Helper", ping: "@🌟 Helper" }
 ];
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// ===== SLASH COMMANDS =====
+// Slash commands
 const commands = [
-  new SlashCommandBuilder().setName("put").setDescription("Create the staff team list"),
-  new SlashCommandBuilder().setName("update").setDescription("Update the staff team list")
+  new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
+  new SlashCommandBuilder().setName("update").setDescription("Update staff team")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-  console.log("Staff Team slash commands registered");
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 })();
 
-// ===== UTIL =====
-
-// Return highest staff role index of a member
-function getHighestStaffRoleIndex(member) {
-  let highestIndex = -1;
-  member.roles.cache.forEach(r => {
-    const idx = STAFF_HIERARCHY.findIndex(k => r.name.toLowerCase().includes(k));
-    if (idx > highestIndex) highestIndex = idx;
-  });
-  return highestIndex;
+// Get highest staff role
+function getHighestStaff(member) {
+  for (const roleDef of ROLE_MAP) {
+    const role = member.roles.cache.find(r =>
+      r.name.toLowerCase().includes(roleDef.key)
+    );
+    if (role) return roleDef;
+  }
+  return null;
 }
 
-// Generate embed
-function generateStaffEmbed(guild) {
+// Build embed
+function buildEmbed(guild) {
   const embed = new EmbedBuilder()
-    .setTitle("📋 Staff Team")
-    .setColor("Blue")
-    .setFooter({ text: "Staff Team | Updated automatically" })
+    .setTitle("📜 Staff Team")
+    .setColor(0x5865f2)
     .setTimestamp();
 
-  STAFF_HIERARCHY.forEach((keyword, index) => {
-    const members = guild.members.cache.filter(m => getHighestStaffRoleIndex(m) === index);
+  ROLE_MAP.forEach(roleDef => {
+    const members = guild.members.cache.filter(m => {
+      const highest = getHighestStaff(m);
+      return highest && highest.key === roleDef.key;
+    });
+
     if (!members.size) return;
 
-    const memberNames = members.map(m => m.user.tag).join("\n");
-    embed.addFields({ name: `${keyword.charAt(0).toUpperCase() + keyword.slice(1)} (${members.size})`, value: memberNames });
+    embed.addFields({
+      name: `${roleDef.label} — ${roleDef.ping}`,
+      value: members.map(m => `• <@${m.id}>`).join("\n"),
+      inline: false
+    });
   });
 
   return embed;
 }
 
-// Generate plain ping message
-function generatePingMessage(guild) {
-  let pingMsg = "";
-  STAFF_HIERARCHY.forEach((keyword, index) => {
-    const members = guild.members.cache.filter(m => getHighestStaffRoleIndex(m) === index);
-    if (!members.size) return;
-
-    pingMsg += `**${keyword.charAt(0).toUpperCase() + keyword.slice(1)} (${members.size})**:\n`;
-    pingMsg += members.map(m => `<@${m.id}>`).join(" ") + "\n\n";
-  });
-
-  return pingMsg || "_No staff members found_";
-}
-
-// ===== COMMAND HANDLER =====
+// Commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const guild = interaction.guild;
-  const channel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!channel) return interaction.reply({ content: "❌ Staff channel not found", ephemeral: true });
+  await interaction.guild.members.fetch();
 
-  if (interaction.commandName === "put" || interaction.commandName === "update") {
-    await guild.members.fetch(); // fetch all members
+  const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
+  if (!channel)
+    return interaction.reply({ content: "Staff channel not found", ephemeral: true });
 
-    const embed = generateStaffEmbed(guild);
-    const pingMessage = generatePingMessage(guild);
+  const embed = buildEmbed(interaction.guild);
 
-    // Edit existing bot message or send new
-    const messages = await channel.messages.fetch({ limit: 50 });
-    const botMessage = messages.find(m => m.author.id === client.user.id);
+  const msgs = await channel.messages.fetch({ limit: 10 });
+  const old = msgs.find(m => m.author.id === client.user.id);
 
-    if (botMessage) {
-      await botMessage.edit({ embeds: [embed] });
-      await interaction.reply({ content: "✅ Staff Team updated!", ephemeral: true });
-    } else {
-      await channel.send({ embeds: [embed] });
-      await interaction.reply({ content: "✅ Staff Team created!", ephemeral: true });
-    }
+  if (old) await old.edit({ embeds: [embed] });
+  else await channel.send({ embeds: [embed] });
 
-    // Send ping message separately to notify
-    if (pingMessage) await channel.send({ content: pingMessage });
-  }
+  await interaction.reply({ content: "✅ Staff team updated", ephemeral: true });
 });
 
 client.login(TOKEN);
