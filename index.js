@@ -6,7 +6,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// STAFF ROLE NAMES IN ORDER (no IDs needed)
+// Staff roles in order
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
   { key: "co founder", label: "💜 Co Founder" },
@@ -23,7 +23,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// REGISTER SLASH COMMANDS
+// Register slash commands
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
@@ -36,13 +36,13 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
-    console.log("Slash commands registered ✅");
+    console.log("✅ Slash commands registered");
   } catch (err) {
     console.error("Error registering commands:", err);
   }
 })();
 
-// Get highest staff role for a member
+// Get highest staff role only
 function getHighestStaff(member) {
   for (const r of ROLE_MAP) {
     const role = member.roles.cache.find(role => role.name.toLowerCase().includes(r.key));
@@ -51,7 +51,7 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build the staff embed
+// Build the staff embed safely
 function buildEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
@@ -69,7 +69,6 @@ function buildEmbed(guild) {
 
     if (!members.size) return;
 
-    // Add field with role ping + members ping
     embed.addFields({
       name: `${roleDef.label} — <@&${role.id}>`,
       value: members.map(m => `• <@${m.id}>`).join("\n"),
@@ -80,16 +79,19 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// HANDLE SLASH COMMANDS
+// Slash command handler
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    // DEFER IMMEDIATELY to prevent timeout
     await interaction.deferReply({ ephemeral: true });
 
-    // FETCH MEMBERS TO ENSURE CACHE
-    await interaction.guild.members.fetch();
+    // Fetch all members safely
+    try {
+      await interaction.guild.members.fetch();
+    } catch (err) {
+      console.warn("Could not fetch members, continuing anyway.");
+    }
 
     const channel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
     if (!channel) return await interaction.editReply("❌ Staff channel not found");
@@ -98,14 +100,14 @@ client.on("interactionCreate", async interaction => {
 
     const payload = {
       embeds: [embed],
-      allowedMentions: { roles: true, users: true } // 🔥 THIS MAKES ROLES + MEMBERS PING
+      allowedMentions: { roles: true, users: true } // PINGS BOTH
     };
 
-    // EDIT last bot message if exists
+    // Edit last bot message if exists
     const messages = await channel.messages.fetch({ limit: 10 });
-    const last = messages.find(m => m.author.id === client.user.id);
+    const lastMsg = messages.find(m => m.author.id === client.user.id);
 
-    if (last) await last.edit(payload);
+    if (lastMsg) await lastMsg.edit(payload);
     else await channel.send(payload);
 
     await interaction.editReply("✅ Staff team updated");
