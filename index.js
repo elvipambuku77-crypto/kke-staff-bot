@@ -13,7 +13,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
-// Staff roles in order
+// Staff roles in order (keys are part of the role name to detect)
 const ROLE_MAP = [
   { key: "main founder", label: "👑 Main Founder" },
   { key: "co founder", label: "💜 Co Founder" },
@@ -49,7 +49,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   }
 })();
 
-// Get highest staff role for a member
+// Get the highest staff role for a member
 function getHighestStaff(member) {
   for (const roleDef of ROLE_MAP) {
     const role = member.roles.cache.find(r =>
@@ -60,21 +60,21 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build staff embed + top line role pings
-function buildStaffMessage(guild) {
-  let rolePingLine = ""; // This pings roles at the top
+// Build embed with members grouped by highest role
+function buildStaffEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
     .setColor(0x5865f2)
     .setTimestamp();
 
   ROLE_MAP.forEach(roleDef => {
+    // get role in guild
     const role = guild.roles.cache.find(r =>
       r.name.toLowerCase().includes(roleDef.key)
     );
     if (!role) return;
 
-    // members whose highest role is this
+    // get members with this as highest role
     const members = guild.members.cache.filter(m => {
       const highest = getHighestStaff(m);
       return highest && highest.key === roleDef.key;
@@ -82,19 +82,14 @@ function buildStaffMessage(guild) {
 
     if (!members.size) return;
 
-    // Add role ping to the top line
-    rolePingLine += `<@&${role.id}> `;
-
-    // Add members inside embed
     embed.addFields({
-      name: `${roleDef.label} — ${role.name}`,
-      value: members.map(m => `• ${m.user.tag}`).join("\n"),
+      name: `${roleDef.label}`,
+      value: members.map(m => `• <@${m.id}>`).join("\n"),
       inline: false
     });
   });
 
-  if (!rolePingLine) rolePingLine = "No staff roles found!";
-  return { embed, rolePingLine };
+  return embed;
 }
 
 // Handle slash commands
@@ -115,20 +110,14 @@ client.on("interactionCreate", async interaction => {
     if (!channel)
       return interaction.editReply({ content: "❌ Staff channel not found" });
 
-    const { embed, rolePingLine } = buildStaffMessage(interaction.guild);
+    const embed = buildStaffEmbed(interaction.guild);
 
     // Edit last bot message if exists
     const msgs = await channel.messages.fetch({ limit: 10 });
     const old = msgs.find(m => m.author.id === client.user.id);
 
-    const payload = {
-      content: rolePingLine, // pings all roles at top
-      embeds: [embed],
-      allowedMentions: { parse: ["roles", "users"] } // ✅ roles & members ping
-    };
-
-    if (old) await old.edit(payload);
-    else await channel.send(payload);
+    if (old) await old.edit({ embeds: [embed] });
+    else await channel.send({ embeds: [embed] });
 
     await interaction.editReply("✅ Staff team updated");
   } catch (err) {
