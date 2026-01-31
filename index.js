@@ -14,22 +14,22 @@ const GUILD_ID = process.env.GUILD_ID;
 const STAFF_CHANNEL_ID = "1427692088614719628";
 
 const ROLE_MAP = [
-  { key: "main founder", label: "👑 Main Founder", ping: "@👑 Main Founder" },
-  { key: "co founder", label: "💜 Founder", ping: "@💜 Founder" },
-  { key: "own┇", label: "🖤 Owner", ping: "@🖤 Owner" },
-  { key: "co┇", label: "💙 Co Owner", ping: "@💙 Co Owner" },
-  { key: "hos┇", label: "🔥 Head of Staff", ping: "@🔥 Head of Staff" },
-  { key: "man┇", label: "💎 Manager", ping: "@💎 Manager" },
-  { key: "adm┇", label: "🛡️ Admin", ping: "@🛡️ Admin" },
-  { key: "mod┇", label: "⚔️ Moderator", ping: "@⚔️ Moderator" },
-  { key: "hel┇", label: "🌟 Helper", ping: "@🌟 Helper" }
+  { key: "main founder", label: "👑 Main Founder" },
+  { key: "co founder", label: "💜 Founder" },
+  { key: "own┇", label: "🖤 Owner" },
+  { key: "co┇", label: "💙 Co Owner" },
+  { key: "hos┇", label: "🔥 Head of Staff" },
+  { key: "man┇", label: "💎 Manager" },
+  { key: "adm┇", label: "🛡️ Admin" },
+  { key: "mod┇", label: "⚔️ Moderator" },
+  { key: "hel┇", label: "🌟 Helper" }
 ];
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// Slash commands
+// Register slash commands
 const commands = [
   new SlashCommandBuilder().setName("put").setDescription("Create staff team"),
   new SlashCommandBuilder().setName("update").setDescription("Update staff team")
@@ -54,7 +54,7 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build embed
+// Build staff embed
 function buildEmbed(guild) {
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
@@ -62,6 +62,11 @@ function buildEmbed(guild) {
     .setTimestamp();
 
   ROLE_MAP.forEach(roleDef => {
+    const role = guild.roles.cache.find(r =>
+      r.name.toLowerCase().includes(roleDef.key)
+    );
+    if (!role) return;
+
     const members = guild.members.cache.filter(m => {
       const highest = getHighestStaff(m);
       return highest && highest.key === roleDef.key;
@@ -70,7 +75,7 @@ function buildEmbed(guild) {
     if (!members.size) return;
 
     embed.addFields({
-      name: `${roleDef.label} — ${roleDef.ping}`,
+      name: `${roleDef.label} — <@&${role.id}>`,
       value: members.map(m => `• <@${m.id}>`).join("\n"),
       inline: false
     });
@@ -79,7 +84,7 @@ function buildEmbed(guild) {
   return embed;
 }
 
-// Commands
+// Handle commands
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
