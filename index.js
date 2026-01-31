@@ -60,8 +60,9 @@ function getHighestStaff(member) {
   return null;
 }
 
-// Build the staff embed with role + member pings
-function buildEmbed(guild) {
+// Build embed and role ping message
+function buildStaffMessage(guild) {
+  let content = ""; // this will ping the roles
   const embed = new EmbedBuilder()
     .setTitle("📜 Staff Team")
     .setColor(0x5865f2)
@@ -73,7 +74,6 @@ function buildEmbed(guild) {
     );
     if (!role) return;
 
-    // Only members whose highest role is this role
     const members = guild.members.cache.filter(m => {
       const highest = getHighestStaff(m);
       return highest && highest.key === roleDef.key;
@@ -81,14 +81,18 @@ function buildEmbed(guild) {
 
     if (!members.size) return;
 
+    // add to embed
     embed.addFields({
-      name: `${roleDef.label} — <@&${role.id}>`, // pings role
-      value: members.map(m => `• <@${m.id}>`).join("\n"), // pings members
+      name: `${roleDef.label} — ${role.name}`, // show role name in embed
+      value: members.map(m => `• ${m.user.tag}`).join("\n"), // member names in embed
       inline: false
     });
+
+    // add role ping to content
+    content += `<@&${role.id}> ` + members.map(m => `<@${m.id}>`).join(" ") + "\n";
   });
 
-  return embed;
+  return { embed, content };
 }
 
 // Handle slash commands
@@ -109,15 +113,16 @@ client.on("interactionCreate", async interaction => {
     if (!channel)
       return interaction.editReply({ content: "❌ Staff channel not found" });
 
-    const embed = buildEmbed(interaction.guild);
+    const { embed, content } = buildStaffMessage(interaction.guild);
 
     // Edit last bot message if exists
     const msgs = await channel.messages.fetch({ limit: 10 });
     const old = msgs.find(m => m.author.id === client.user.id);
 
     const payload = {
+      content: content || "No staff members found!",
       embeds: [embed],
-      allowedMentions: { parse: ["roles", "users"] } // ✅ fixed pinging
+      allowedMentions: { parse: ["roles", "users"] } // ✅ roles and users will ping
     };
 
     if (old) await old.edit(payload);
